@@ -1,0 +1,71 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+android {
+    namespace = "mohamedali.salim.quto"
+    compileSdk = 34
+    ndkVersion = flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        applicationId = "mohamedali.salim.quto"
+        // You can update the following values to match your application needs.
+        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        minSdk = flutter.minSdkVersion
+        targetSdk = 34
+        versionCode = flutter.versionCode
+        versionName = flutter.versionName
+    }
+
+    buildTypes {
+        release {
+            // TODO: Add your own signing config for the release build.
+            // Signing with the debug keys for now, so `flutter run --release` works.
+            minifyEnabled true
+            shrinkResources true
+            signingConfig = signingConfigs.debug
+        }
+    }
+    
+    // Prevents unnecessary resource rebuilds
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+}
+
+
+subprojects { project ->
+    project.plugins.whenPluginAdded { plugin ->
+        if (plugin.class.name.contains("com.android.build.gradle.LibraryPlugin")) {
+
+            // Default namespace for any plugin without namespace
+            if (!project.extensions.extraProperties.has("namespace")) {
+                project.extensions.extraProperties.set("namespace", project.group.toString())
+            }
+
+            // Force namespace for isar_flutter_libs
+            if (project.name == "isar_flutter_libs") {
+                project.extensions.extraProperties.set("namespace", "com.isar.flutter.libs")
+            }
+        }
+    }
+}
+
+flutter {
+    source = "../.."
+}
