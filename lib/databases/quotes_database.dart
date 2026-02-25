@@ -22,72 +22,83 @@ class QuotesDatabase {
     return _isar!;
   }
 
+  // ================= INIT =================
+
   static Future<void> init() async {
     if (_initialized) return;
 
-    try {
-      final dir = await getApplicationSupportDirectory();
+    final dir = await getApplicationSupportDirectory();
 
-      _isar = await Isar.open(
-        [QuoteSchema],
-        directory: dir.path,
-        inspector: kDebugMode,
-        compactOnLaunch: const CompactCondition(
-          minBytes: 100 * 1024,
-          minRatio: 2.0,
-        ),
-      );
+    _isar = await Isar.open(
+      [QuoteSchema],
+      directory: dir.path,
+      inspector: false,
+      compactOnLaunch: const CompactCondition(
+        minBytes: 100 * 1024,
+        minRatio: 2.0,
+      ),
+    );
 
-      _initialized = true;
-      await _seedQuotesIfEmpty();
-
-      debugPrint('✅ QuotesDatabase initialized');
-    } catch (e, stack) {
-      debugPrint('❌ QuotesDatabase init failed: $e');
-      debugPrint('$stack');
-      rethrow;
-    }
+    _initialized = true;
+    await _seedQuotesIfEmpty();
   }
 
+  // ================= SEED =================
+
   static Future<void> _seedQuotesIfEmpty() async {
-    final count = await isar.quotes.count();
-    if (count > 0) return;
+    if (await isar.quotes.count() > 0) return;
 
     try {
       final jsonString = await rootBundle.loadString('assets/data/quotes.json');
-      final List<dynamic> data = jsonDecode(jsonString);
+      final List data = jsonDecode(jsonString);
 
-      final quotes = <Quote>[];
+      final quotes = data
+          .map((q) {
+            final text = (q['quote'] ?? '').toString().trim();
+            if (text.isEmpty) return null;
 
-      for (final q in data) {
-        final text = (q['quote'] ?? '').toString().trim();
-        if (text.isEmpty) continue;
-
-        quotes.add(
-          Quote()
-            ..quote = text
-            ..author = (q['author'] ?? 'Unknown').toString().trim()
-            ..tags =
-                (q['tags'] is List) ? List<String>.from(q['tags']) : <String>[]
-            ..isFavorite = false,
-        );
-      }
+            return Quote()
+              ..quote = text
+              ..author = (q['author'] ?? 'Unknown').toString().trim()
+              ..tags = (q['tags'] is List)
+                  ? List<String>.from(q['tags'])
+                  : <String>[]
+              ..isFavorite = false;
+          })
+          .whereType<Quote>()
+          .toList();
 
       if (quotes.isNotEmpty) {
-        await isar.writeTxn(() async {
-          await isar.quotes.putAll(quotes);
-        });
+        await isar.writeTxn(() => isar.quotes.putAll(quotes));
       }
 
-      debugPrint('📦 Seeded ${quotes.length} quotes');
-    } catch (e, stack) {
-      debugPrint('❌ Quote seeding failed: $e');
-      debugPrint('$stack');
+      debugPrint('📦 Seeded ${quotes.length}');
+    } catch (e) {
+      debugPrint('❌ Seeding failed: $e');
     }
   }
 
-  static Future<List<Quote>> getAllQuotes({int limit = 100, int offset = 0}) {
-    return isar.quotes.where().offset(offset).limit(limit).findAll();
+  // ================= CRUD =================
+
+  static Future<Id> addQuote(Quote quote) async {
+    return isar.writeTxn(() => isar.quotes.put(quote));
+  }
+
+  static Future<void> deleteQuote(Id id) async {
+    await isar.writeTxn(() => isar.quotes.delete(id));
+  }
+
+  static Future<void> updateQuote(Quote quote) async {
+    await isar.writeTxn(() => isar.quotes.put(quote));
+  }
+
+  // ================= FETCH =================
+
+  static Future<List<Quote>> getQuotesPage({
+    int page = 0,
+    int size = 20,
+  }) {
+    return isar.quotes.where().offset(page * size).limit(size).findAll();
   }
 
   static Future<Quote?> getQuoteById(Id id) {
@@ -98,102 +109,127 @@ class QuotesDatabase {
     final count = await isar.quotes.count();
     if (count == 0) return null;
 
-    final index = _random.nextInt(count);
-    return isar.quotes.where().offset(index).limit(1).findFirst();
+    final offset = _random.nextInt(count);
+    return isar.quotes.where().offset(offset).limit(1).findFirst();
   }
+
+  static Future<List<Quote>> getRandomBatch(int amount) async {
+    final count = await isar.quotes.count();
+    if (count == 0) return [];
+
+    final offsets = <int>{};
+    while (offsets.length < min(amount, count)) {
+      offsets.add(_random.nextInt(count));
+    }
+
+    final results = <Quote>[];
+    for (final o in offsets) {
+      final q = await isar.quotes.where().offset(o).limit(1).findFirst();
+      if (q != null) results.add(q);
+    }
+    return results;
+  }
+
+  // ================= SEARCH =================
 
   static Future<List<Quote>> searchQuotesWithTags({
     required String query,
     required List<String> tags,
   }) async {
     final q = query.trim().toLowerCase();
-
     if (q.isEmpty && tags.isEmpty) {
-      return getAllQuotes(limit: 200);
+      return getQuotesPage(size: 200);
     }
-
     final allQuotes = await isar.quotes.where().findAll();
-
     return allQuotes.where((quote) {
       final matchesQuery = q.isEmpty ||
           quote.quote.toLowerCase().contains(q) ||
           quote.author.toLowerCase().contains(q);
-
       final matchesTags =
           tags.isEmpty || quote.tags.any((t) => tags.contains(t));
-
       return matchesQuery && matchesTags;
     }).toList();
   }
 
-  static Future<List<Quote>> getAuthorQuotes(String authorName) {
-    return isar.quotes.where().filter().authorEqualTo(authorName).findAll();
+  static Future<List<Quote>> search(String text) {
+    final q = text.trim();
+    if (q.isEmpty) return getQuotesPage();
+
+    return isar.quotes
+        .filter()
+        .group((g) => g
+            .quoteContains(q, caseSensitive: false)
+            .or()
+            .authorContains(q, caseSensitive: false))
+        .findAll();
   }
 
   static Future<List<Quote>> getQuotesByTag(String tag) {
-    return isar.quotes.where().filter().tagsElementEqualTo(tag).findAll();
+    return isar.quotes.filter().tagsElementEqualTo(tag).findAll();
   }
 
-  static Future<List<String>> getAllTags() async {
-    final tagsLists = await isar.quotes.where().tagsProperty().findAll();
-    return tagsLists.expand((e) => e).toSet().toList()..sort();
+  static Future<List<Quote>> getAuthorQuotes(String author) {
+    return isar.quotes.filter().authorEqualTo(author).findAll();
   }
 
-  static Future<Map<String, int>> getTagsWithCount() async {
-    final tagsLists = await isar.quotes.where().tagsProperty().findAll();
-    final Map<String, int> counts = {};
-
-    for (final list in tagsLists) {
-      for (final tag in list) {
-        counts[tag] = (counts[tag] ?? 0) + 1;
-      }
-    }
-
-    return counts;
-  }
-
-  static Future<int> getTagCount(String tagName) {
-    return isar.quotes.where().filter().tagsElementEqualTo(tagName).count();
-  }
+  // ================= FAVORITES =================
 
   static Future<List<Quote>> getFavoriteQuotes() {
-    return isar.quotes.where().filter().isFavoriteEqualTo(true).findAll();
-  }
-
-  static Future<void> toggleFavorite(Id quoteId) async {
-    await isar.writeTxn(() async {
-      final quote = await isar.quotes.get(quoteId);
-      if (quote == null) return;
-
-      quote.isFavorite = !quote.isFavorite;
-      await isar.quotes.put(quote);
-    });
-  }
-
-  static Future<void> setFavorite(Id quoteId, bool value) async {
-    await isar.writeTxn(() async {
-      final quote = await isar.quotes.get(quoteId);
-      if (quote == null) return;
-
-      quote.isFavorite = value;
-      await isar.quotes.put(quote);
-    });
+    return isar.quotes.filter().isFavoriteEqualTo(true).findAll();
   }
 
   static Future<void> clearFavorites() async {
     await isar.writeTxn(() async {
-      final favorites = await getFavoriteQuotes();
-      if (favorites.isEmpty) return;
-
-      for (final q in favorites) {
-        q.isFavorite = false;
-      }
-      await isar.quotes.putAll(favorites);
+      await isar.quotes.where().isFavoriteEqualTo(true).deleteAll();
     });
   }
 
+  static Future<void> toggleFavorite(Id id) async {
+    await isar.writeTxn(() async {
+      final q = await isar.quotes.get(id);
+      if (q == null) return;
+      q.isFavorite = !q.isFavorite;
+      await isar.quotes.put(q);
+    });
+  }
+
+  // ================= TAG UTIL =================
+
+  static Future<List<String>> getAllTags() async {
+    final lists = await isar.quotes.where().tagsProperty().findAll();
+    return lists.expand((e) => e).toSet().toList()..sort();
+  }
+
+  static Future<Map<String, int>> getTagStats() async {
+    final lists = await isar.quotes.where().tagsProperty().findAll();
+    final map = <String, int>{};
+
+    for (final l in lists) {
+      for (final t in l) {
+        map[t] = (map[t] ?? 0) + 1;
+      }
+    }
+    return map;
+  }
+
+  // ================= STATS =================
+
+  static Future<Map<String, int>> databaseStats() async {
+    final total = await isar.quotes.count();
+    final fav = await isar.quotes.filter().isFavoriteEqualTo(true).count();
+    final tags = (await getAllTags()).length;
+
+    return {
+      "total_quotes": total,
+      "favorites": fav,
+      "tags": tags,
+    };
+  }
+
+  // ================= CLOSE =================
+
   static Future<void> close() async {
-    if (_isar != null && _isar!.isOpen) {
+    if (_isar?.isOpen ?? false) {
       await _isar!.close();
       _isar = null;
       _initialized = false;

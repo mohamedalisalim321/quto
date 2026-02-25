@@ -24,6 +24,7 @@ dependencies:
   
   google_nav_bar: ^5.0.7
   url_launcher: ^6.3.1
+  auto_size_text: ^3.0.0
 
 dev_dependencies:
   flutter_test:
@@ -39,9 +40,9 @@ flutter_launcher_icons:
   android: true
   ios: false
   image_path: "assets/images/app_icon.png"
-
-  adaptive_icon_background: "#FFFFF"
+  
   adaptive_icon_foreground: "assets/images/app_icon.png"
+  adaptive_icon_background: "#121212"
 
 
 flutter:

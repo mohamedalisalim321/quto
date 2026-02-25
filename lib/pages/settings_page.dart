@@ -1,9 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../databases/quotes_database.dart';
 import '../themes/theme_provider.dart';
@@ -16,197 +17,162 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  bool _clearing = false;
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-
     final themeProvider = context.watch<ThemeProvider>();
+    final colors = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
     return ListView(
       padding: EdgeInsets.all(16.w),
       children: [
         _pageTitle(textTheme),
-        _sectionTitle('Appearance'),
-        _settingTile(
-          title: 'Dark Mode',
-          subtitle: 'Switch between light and dark theme',
-          trailing: CupertinoSwitch(
-            value: themeProvider.isDarkMode,
-            onChanged: (_) {
-              HapticFeedback.selectionClick();
-              themeProvider.toggleTheme();
-            },
-          ),
+
+        /// ========= APPEARANCE =========
+        _group(
+          title: "Appearance",
+          children: [
+            _tile(
+              icon: Icons.dark_mode_rounded,
+              title: "Dark Mode",
+              subtitle: "Change Between Light Mode and Dark Mode",
+              trailing: CupertinoSwitch(
+                value: themeProvider.isDarkMode,
+                onChanged: (value) {
+                  HapticFeedback.selectionClick();
+                  themeProvider.toggleTheme();
+                },
+              ),
+              onTap: () {
+                HapticFeedback.selectionClick();
+                themeProvider.toggleTheme();
+              },
+            ),
+          ],
         ),
-        SizedBox(height: 24.h),
-        _sectionTitle('Data'),
-        _settingTile(
-          title: 'Clear Favorites',
-          subtitle: 'Remove all saved quotes',
-          trailing: Icon(
-            Icons.delete_outline,
-            color: colors.error.withOpacity(0.8),
-          ),
-          onTap: () => _confirmClearFavorites(context),
+
+        /// ========= DATA =========
+        _group(
+          title: "Data",
+          children: [
+            _tile(
+              icon: Icons.favorite_outline,
+              title: "Clear Favorites",
+              subtitle: "Remove all saved quotes",
+              trailing: _clearing
+                  ? SizedBox(
+                      width: 18.w,
+                      height: 18.w,
+                      child: const CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      Icons.delete_outline,
+                      color: colors.error.withOpacity(.9),
+                    ),
+              onTap: _clearing ? null : _confirmClearFavorites,
+            ),
+          ],
         ),
-        SizedBox(height: 24.h),
-        _sectionTitle('Developer'),
-        _settingTile(
-          title: 'About Developer',
-          subtitle: 'See The Developer',
-          onTap: () => _showDeveloperDialog(),
+
+        /// ========= DEVELOPER =========
+        _group(
+          title: "Developer",
+          children: [
+            _tile(
+              icon: Icons.person_rounded,
+              title: "About Developer",
+              onTap: _showDeveloperDialog,
+            ),
+          ],
         ),
       ],
     );
   }
 
-  void _showDeveloperDialog() {
-    showCupertinoDialog(
-      context: context,
-      builder: (context) {
-        return CupertinoAlertDialog(
-          title: const Text(
-            "Mohamed Ali Salim",
-            style: TextStyle(fontFamily: "Play"),
-          ),
-          content: Column(
-            children: [
-              // my image
-              Image.asset(
-                "assets/images/mohamed_ali_salim.jpg",
-                fit: BoxFit.scaleDown,
-              ),
+  // ================= GROUP =================
 
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  IconButton(
-                    icon: Icon(
-                      Icons.facebook_rounded,
-                      color: Colors.blue,
-                      size: 32.w,
-                    ),
-                    onPressed: () async {
-                      final uri = Uri.parse(
-                          'https://www.facebook.com/profile.php?id=61561233540084');
-
-                      if (!await launchUrl(
-                        uri,
-                        mode: LaunchMode.externalApplication,
-                      )) {
-                        throw 'Could not launch $uri';
-                      }
-                    },
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      Icons.code_rounded,
-                      color: Colors.grey,
-                      size: 32.w,
-                    ),
-                    onPressed: () async {
-                      final uri = Uri.parse(
-                          'https://www.facebook.com/profile.php?id=61561233540084');
-
-                      if (!await launchUrl(
-                        uri,
-                        mode: LaunchMode.externalApplication,
-                      )) {
-                        throw 'Could not launch $uri';
-                      }
-                    },
-                  ),
-                ],
-              )
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _pageTitle(TextTheme textTheme) {
+  Widget _group({required String title, required List<Widget> children}) {
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: 12.h),
-      child: Text(
-        'Settings',
-        textAlign: TextAlign.center,
-        style: textTheme.headlineSmall?.copyWith(
-          fontFamily: "Inter",
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.grey[400]
-              : Colors.grey[600],
-        ),
+      padding: EdgeInsets.only(bottom: 24.h),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title.toUpperCase(),
+            style: TextStyle(
+              fontSize: 12.sp,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey,
+            ),
+          ),
+          SizedBox(height: 8.h),
+          Column(children: children)
+        ],
       ),
     );
   }
 
-  Widget _sectionTitle(String text) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: 8.h),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontFamily: "Inter",
-          fontSize: 14.sp,
-          fontWeight: FontWeight.w600,
-          color: Colors.grey,
-        ),
-      ),
-    );
-  }
+  // ================= TILE =================
 
-  Widget _settingTile({
+  Widget _tile({
+    required IconData icon,
     required String title,
     String? subtitle,
     Widget? trailing,
     VoidCallback? onTap,
   }) {
-    return Card(
-      elevation: 0,
-      margin: EdgeInsets.only(bottom: 8.h),
-      child: ListTile(
-        title: Text(
-          title,
-          style: const TextStyle(fontFamily: "Inter"),
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: subtitle != null
+          ? Text(subtitle, style: const TextStyle(color: Colors.grey))
+          : null,
+      trailing: trailing,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14.r),
+      ),
+      onTap: onTap,
+    );
+  }
+
+  // ================= TITLE =================
+
+  Widget _pageTitle(TextTheme textTheme) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 12.h),
+      child: Center(
+        child: Text(
+          "Settings",
+          style: textTheme.headlineSmall?.copyWith(
+            fontFamily: "Inter",
+            fontSize: 22.sp,
+            fontWeight: FontWeight.bold,
+            color: Colors.grey,
+          ),
         ),
-        subtitle: subtitle != null
-            ? Text(
-                subtitle,
-                style: TextStyle(color: Colors.grey[400], fontFamily: "Inter"),
-              )
-            : null,
-        trailing: trailing,
-        enabled: onTap != null || trailing != null,
-        onTap: onTap,
       ),
     );
   }
 
-  Future<void> _confirmClearFavorites(BuildContext context) async {
+  // ================= CLEAR FAVORITES =================
+
+  Future<void> _confirmClearFavorites() async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text(
-          'Clear favorites?',
-          style: TextStyle(fontFamily: "Inter"),
-        ),
-        content: const Text(
-          'This action cannot be undone.',
-          style: TextStyle(fontFamily: "Inter"),
-        ),
+        title: const Text('Clear favorites?'),
+        content: const Text('This action cannot be undone.'),
         actions: [
-          FilledButton(
-            child: const Text('Cancel', style: TextStyle(fontFamily: "Inter")),
+          TextButton(
             onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Clear', style: TextStyle(fontFamily: "Inter")),
             onPressed: () => Navigator.pop(context, true),
+            child: const Text("Clear"),
           ),
         ],
       ),
@@ -214,14 +180,83 @@ class _SettingsPageState extends State<SettingsPage> {
 
     if (confirmed != true) return;
 
+    setState(() => _clearing = true);
     await QuotesDatabase.clearFavorites();
+    setState(() => _clearing = false);
 
-    if (!context.mounted) return;
+    if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Favorites cleared'),
-        duration: Duration(seconds: 1),
+      const SnackBar(content: Text("Favorites cleared")),
+    );
+  }
+
+  // ================= DEVELOPER =================
+
+  void _showDeveloperDialog() {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28.r)),
+      ),
+      builder: (_) => Padding(
+        padding: EdgeInsets.all(24.w),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 96.r,
+              backgroundImage:
+                  const AssetImage("assets/images/mohamed_ali_salim.jpg"),
+            ),
+            SizedBox(height: 12.h),
+            Text(
+              "Mohamed Ali Salim",
+              style: TextStyle(
+                fontFamily: "Inter",
+                fontSize: 18.sp,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            SizedBox(height: 16.h),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _socialButton(
+                  icon: Icons.facebook_rounded,
+                  color: Colors.blue,
+                  url: "https://www.facebook.com/profile.php?id=61561233540084",
+                ),
+                SizedBox(width: 22.w),
+                _socialButton(
+                  icon: Icons.code_rounded,
+                  color: Colors.black,
+                  url: "https://github.com/mohamedalisalim321/quto",
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _socialButton({
+    required IconData icon,
+    required Color color,
+    required String url,
+  }) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(50.r),
+      onTap: () async {
+        final uri = Uri.parse(url);
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      },
+      child: CircleAvatar(
+        radius: 22.r,
+        backgroundColor: color.withOpacity(.15),
+        child: Icon(icon, color: color),
       ),
     );
   }

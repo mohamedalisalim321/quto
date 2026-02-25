@@ -13,8 +13,11 @@ class FavoritesPage extends StatefulWidget {
   State<FavoritesPage> createState() => _FavoritesPageState();
 }
 
-class _FavoritesPageState extends State<FavoritesPage> {
-  late Future<List<Quote>> _favoritesFuture;
+class _FavoritesPageState extends State<FavoritesPage>
+    with TickerProviderStateMixin {
+  final List<Quote> _favorites = [];
+  bool _isLoading = true;
+  bool _hasError = false;
 
   @override
   void initState() {
@@ -22,105 +25,82 @@ class _FavoritesPageState extends State<FavoritesPage> {
     _loadFavorites();
   }
 
-  void _loadFavorites() {
+  Future<void> _loadFavorites() async {
     setState(() {
-      _favoritesFuture = QuotesDatabase.getFavoriteQuotes();
+      _isLoading = true;
+      _hasError = false;
     });
+
+    try {
+      final data = await QuotesDatabase.getFavoriteQuotes();
+      if (!mounted) return;
+
+      setState(() {
+        _favorites
+          ..clear()
+          ..addAll(data);
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+      });
+    }
   }
 
-  Future<void> _removeFromFavorites(Quote quote) async {
-    if (!mounted) return;
+  Future<void> _removeFromFavorites(int index) async {
+    final quote = _favorites[index];
+
     HapticFeedback.lightImpact();
 
-    final snackBar = SnackBar(
-      behavior: SnackBarBehavior.floating,
-      duration: const Duration(seconds: 3),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14.r),
-      ),
-      content: const Text(
-        'Removed from favorites',
-        style: TextStyle(
-          fontFamily: "Inter",
+    // Optimistic removal
+    setState(() => _favorites.removeAt(index));
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14.r),
         ),
-      ),
-      action: SnackBarAction(
-        label: 'UNDO',
-        onPressed: () async {
-          await QuotesDatabase.toggleFavorite(quote.id);
-          if (mounted) _loadFavorites();
-        },
+        content: const Text(
+          'Removed from favorites',
+          style: TextStyle(fontFamily: "Inter"),
+        ),
+        action: SnackBarAction(
+          label: 'UNDO',
+          onPressed: () async {
+            await QuotesDatabase.toggleFavorite(quote.id);
+            _loadFavorites();
+          },
+        ),
       ),
     );
 
-    ScaffoldMessenger.of(context).showSnackBar(snackBar);
-
     try {
       await QuotesDatabase.toggleFavorite(quote.id);
+    } catch (_) {
       _loadFavorites();
-    } catch (e) {
-      debugPrint('❌ Failed to remove favorite: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to update. Please try again.')),
-        );
-        _loadFavorites();
-      }
     }
-    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final textTheme = theme.textTheme;
 
     return Padding(
       padding: EdgeInsets.all(16.w),
       child: Column(
         children: [
-          _pageTitle(textTheme),
+          _header(textTheme),
           Expanded(
             child: RefreshIndicator.adaptive(
-              onRefresh: () async => _loadFavorites(),
-              child: FutureBuilder<List<Quote>>(
-                future: _favoritesFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Center(
-                      child: CircularProgressIndicator(
-                        valueColor:
-                            AlwaysStoppedAnimation<Color>(colorScheme.primary),
-                      ),
-                    );
-                  }
-
-                  if (snapshot.hasError) {
-                    return _errorState(context, colorScheme, textTheme);
-                  }
-
-                  final quotes = snapshot.data ?? [];
-
-                  if (quotes.isEmpty) {
-                    return _emptyState(context, colorScheme, textTheme);
-                  }
-
-                  return ListView.builder(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: EdgeInsets.all(16.w),
-                    itemCount: quotes.length,
-                    itemBuilder: (_, index) {
-                      final quote = quotes[index];
-                      return MyFavoriteCard(
-                        key: ValueKey(quote.id),
-                        quote: quote,
-                        onRemove: () => _removeFromFavorites(quote),
-                      );
-                    },
-                  );
-                },
-              ),
+              onRefresh: _loadFavorites,
+              child: _buildBody(colors, textTheme),
             ),
           ),
         ],
@@ -128,25 +108,76 @@ class _FavoritesPageState extends State<FavoritesPage> {
     );
   }
 
-  Widget _pageTitle(TextTheme textTheme) {
+  Widget _header(TextTheme textTheme) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 12.h),
-      child: Text(
-        'Favorites',
-        textAlign: TextAlign.center,
-        style: textTheme.headlineSmall?.copyWith(
-          fontFamily: "Inter",
-          fontWeight: FontWeight.bold,
-          color: Theme.of(context).brightness == Brightness.dark
-              ? Colors.grey[400]
-              : Colors.grey[600],
-        ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            'Favorites',
+            style: textTheme.headlineSmall?.copyWith(
+              fontFamily: "Inter",
+              fontSize: 22.sp,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey,
+            ),
+          ),
+          SizedBox(width: 8.w),
+          if (!_isLoading)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20.r),
+                color: Colors.red.withOpacity(.1),
+              ),
+              child: Text(
+                _favorites.length.toString(),
+                style: const TextStyle(
+                  fontFamily: "Inter",
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red,
+                ),
+              ),
+            )
+        ],
       ),
     );
   }
 
-  Widget _emptyState(
-      BuildContext context, ColorScheme colorScheme, TextTheme textTheme) {
+  Widget _buildBody(ColorScheme colors, TextTheme textTheme) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator.adaptive());
+    }
+
+    if (_hasError) {
+      return _errorState(colors, textTheme);
+    }
+
+    if (_favorites.isEmpty) {
+      return _emptyState(colors, textTheme);
+    }
+
+    return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      itemCount: _favorites.length,
+      itemBuilder: (_, index) {
+        final quote = _favorites[index];
+
+        return AnimatedOpacity(
+          duration: const Duration(milliseconds: 300),
+          opacity: 1,
+          child: MyFavoriteCard(
+            quote: quote,
+            onRemove: () => _removeFromFavorites(index),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _emptyState(ColorScheme colors, TextTheme textTheme) {
     return Center(
       child: Padding(
         padding: EdgeInsets.all(32.w),
@@ -155,16 +186,23 @@ class _FavoritesPageState extends State<FavoritesPage> {
           children: [
             Icon(
               Icons.favorite_border_rounded,
-              size: 64,
-              color: colorScheme.onSurface.withOpacity(0.5),
+              size: 70.sp,
+              color: colors.onSurface.withOpacity(.4),
             ),
-            SizedBox(height: 16.h),
+            SizedBox(height: 20.h),
             Text(
-              'No favorite quotes yet ❤️\nStart saving the ones you love!',
-              textAlign: TextAlign.center,
-              style: textTheme.bodyLarge?.copyWith(
+              "No favorites yet ❤️",
+              style: textTheme.titleMedium?.copyWith(
                 fontFamily: "Inter",
-                color: colorScheme.onSurface.withOpacity(0.7),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            SizedBox(height: 6.h),
+            Text(
+              "Start saving quotes you love.",
+              style: textTheme.bodyMedium?.copyWith(
+                fontFamily: "Inter",
+                color: colors.onSurface.withOpacity(.6),
               ),
             ),
           ],
@@ -173,41 +211,30 @@ class _FavoritesPageState extends State<FavoritesPage> {
     );
   }
 
-  Widget _errorState(
-      BuildContext context, ColorScheme colorScheme, TextTheme textTheme) {
+  Widget _errorState(ColorScheme colors, TextTheme textTheme) {
     return Center(
-      child: Padding(
-        padding: EdgeInsets.all(32.w),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: colorScheme.error,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 64.sp, color: colors.error),
+          SizedBox(height: 16.h),
+          Text(
+            "Failed to load favorites",
+            style: textTheme.bodyLarge?.copyWith(
+              fontFamily: "Inter",
+              color: colors.error,
             ),
-            SizedBox(height: 16.h),
-            Text(
-              'Failed to load favorites 😕',
-              textAlign: TextAlign.center,
-              style: textTheme.bodyLarge?.copyWith(
-                fontFamily: "Inter",
-                color: colorScheme.error,
-              ),
+          ),
+          SizedBox(height: 20.h),
+          OutlinedButton.icon(
+            onPressed: _loadFavorites,
+            icon: const Icon(Icons.refresh),
+            label: const Text(
+              "Retry",
+              style: TextStyle(fontFamily: "Inter"),
             ),
-            SizedBox(height: 24.h),
-            OutlinedButton.icon(
-              onPressed: _loadFavorites,
-              icon: const Icon(Icons.refresh),
-              label: const Text(
-                'Retry',
-                style: TextStyle(
-                  fontFamily: "Inter",
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

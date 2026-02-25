@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:quto/components/my_autor_card.dart';
 
+import '../components/my_author_card.dart';
 import '../databases/quotes_database.dart';
 import '../models/quote.dart';
 
@@ -45,7 +45,7 @@ class _AuthorPageState extends State<AuthorPage> {
         duration: const Duration(seconds: 1),
         content: Text(
           quote.isFavorite ? 'Added to favorites ❤️' : 'Removed from favorites',
-          style: TextStyle(fontFamily: "Inter"),
+          style: const TextStyle(fontFamily: "Inter"),
         ),
       ),
     );
@@ -61,10 +61,11 @@ class _AuthorPageState extends State<AuthorPage> {
         elevation: 0,
         backgroundColor: colors.surface,
         foregroundColor: colors.onSurface,
+        surfaceTintColor: Colors.transparent,
         title: Text(
           widget.authorName,
           style: TextStyle(
-            fontFamily: "Inter",
+            fontFamily: "Play",
             fontSize: 20.sp,
             fontWeight: FontWeight.w600,
           ),
@@ -117,7 +118,7 @@ class _AuthorPageState extends State<AuthorPage> {
             itemCount: quotes.length,
             separatorBuilder: (_, __) => SizedBox(height: 12.h),
             itemBuilder: (context, index) {
-              return MyAutorCard(
+              return MyAuthorCard(
                 quote: quotes[index],
                 onFavoriteToggle: () => _toggleFavorite(quotes[index]),
               );
